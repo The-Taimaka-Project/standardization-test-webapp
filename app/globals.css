@@ -1,0 +1,92 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Light is the default theme. Dark is opt-in via data-theme="dark" on <html>. */
+:root {
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --panel-2: #f1f3f6;
+  --border: #d8dde4;
+  --text: #181c22;
+  --muted: #6b7380;
+  --accent: #2563eb;
+  --row-hover: #f7f9fc;
+  --override: #b45309;
+  --override-bg: rgba(245, 158, 11, 0.10);
+}
+
+:root[data-theme='dark'] {
+  --bg: #0b0d10;
+  --panel: #15181d;
+  --panel-2: #1d2127;
+  --border: #2a2f37;
+  --text: #e6e9ee;
+  --muted: #8a93a0;
+  --accent: #4f8cff;
+  --row-hover: #1a1d23;
+  --override: #fbbf24;
+  --override-bg: rgba(245, 158, 11, 0.10);
+}
+
+html, body { background: var(--bg); color: var(--text); }
+body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; }
+
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; }
+.btn {
+  display: inline-flex; align-items: center; gap: .5rem;
+  padding: .5rem .9rem; border-radius: .5rem;
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+  font-size: .9rem;
+  cursor: pointer;
+}
+.btn:hover { background: var(--row-hover); }
+.btn:disabled,
+.btn[disabled] {
+  background: var(--panel-2);
+  color: var(--muted);
+  border-color: var(--border);
+  cursor: not-allowed;
+  opacity: 0.6;
+  filter: none;
+}
+.btn:disabled:hover,
+.btn[disabled]:hover { background: var(--panel-2); }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #ffffff; }
+.btn-primary:hover { filter: brightness(1.05); background: var(--accent); }
+.btn-danger { background: #b9243a; border-color: #b9243a; color: #ffffff; }
+.input {
+  background: var(--panel); border: 1px solid var(--border); border-radius: .5rem;
+  padding: .5rem .75rem; color: var(--text); font-size: .9rem;
+}
+.input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.label { display: block; font-size: .8rem; color: var(--muted); margin-bottom: .25rem; }
+.chip {
+  display: inline-flex; align-items: center; gap: .35rem;
+  padding: .15rem .55rem; border-radius: 999px;
+  font-size: .75rem; border: 1px solid var(--border);
+}
+.chip-pass { background: rgba(22,163,74,.15); border-color: #16a34a; color: #15803d; }
+.chip-partial { background: rgba(245,158,11,.15); border-color: #f59e0b; color: #b45309; }
+.chip-fail { background: rgba(220,38,38,.15); border-color: #dc2626; color: #b91c1c; }
+.chip-warn { background: rgba(245,158,11,.10); border-color: #f59e0b; color: #b45309; }
+
+:root[data-theme='dark'] .chip-pass { color: #4ade80; }
+:root[data-theme='dark'] .chip-partial { color: #fbbf24; }
+:root[data-theme='dark'] .chip-fail { color: #f87171; }
+:root[data-theme='dark'] .chip-warn { color: #fbbf24; }
+
+.row-pass { background: rgba(22,163,74,.08); }
+.row-partial { background: rgba(245,158,11,.08); }
+.row-fail { background: rgba(220,38,38,.08); }
+.cell-discrepancy { background: rgba(245,158,11,.18); }
+
+table.std { width: 100%; border-collapse: collapse; }
+table.std th, table.std td { padding: .55rem .75rem; border-bottom: 1px solid var(--border); text-align: left; font-size: .9rem; }
+table.std th { color: var(--muted); font-weight: 500; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; }
+
+/* Override-cell highlight (used by the value editors). */
+.input.override {
+  border-color: var(--override);
+  background: var(--override-bg);
+}

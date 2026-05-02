@@ -1,0 +1,12 @@
+node_modules/
+.next/
+.env
+.env.local
+.env.*.local
+dev_odk.creds
+*.log
+.DS_Store
+coverage/
+.vitest/
+dist/
+build/
