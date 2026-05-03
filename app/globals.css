@@ -80,6 +80,9 @@ body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
 .row-partial { background: rgba(245,158,11,.08); }
 .row-fail { background: rgba(220,38,38,.08); }
 .cell-discrepancy { background: rgba(245,158,11,.18); }
+.cell-not-tested { opacity: 0.45; }
+.cell-not-tested input,
+.cell-not-tested input:focus { background: var(--panel-2); cursor: not-allowed; }
 .submission-count-ok { font-weight: 600; color: #15803d; }
 .submission-count-bad { font-weight: 600; color: #b91c1c; }
 .candidate-button {

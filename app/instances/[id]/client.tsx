@@ -651,6 +651,7 @@ function EnumeratorRow({
               subs={groupSubs}
               otherGroupSubs={otherGroupSubs}
               enumeratorId={e.enumeratorId}
+              measures={{ muac: e.measuresMuac, weight: e.measuresWeight, height: e.measuresHeight }}
               overrides={overrides}
               discrepancies={discrepancies}
               onChangeOverride={onChangeOverride}
@@ -697,12 +698,13 @@ function computeDiscrepancies(r1: NormalizedSubmission[], r2: NormalizedSubmissi
 }
 
 function SubmissionsDetail({
-  instance, subs, otherGroupSubs, enumeratorId, overrides, discrepancies, onChangeOverride,
+  instance, subs, otherGroupSubs, enumeratorId, measures, overrides, discrepancies, onChangeOverride,
 }: {
   instance: InstanceLite;
   subs: NormalizedSubmission[];
   otherGroupSubs: NormalizedSubmission[];
   enumeratorId: number;
+  measures: Record<Measurement, boolean>;
   overrides: OverrideMap;
   discrepancies: { childId: number; measurement: Measurement; v1: number; v2: number; diff: number }[];
   onChangeOverride: () => Promise<void>;
@@ -768,6 +770,7 @@ function SubmissionsDetail({
               key={s.uuid}
               s={s}
               instance={instance}
+              measures={measures}
               overrides={overrides}
               onChangeOverride={onChangeOverride}
               isDuplicate={dupKeys.has(`${s.round}|${s.childId}`)}
@@ -961,10 +964,11 @@ function shortUuid(uuid: string) {
 }
 
 function SubmissionRow({
-  s, instance, overrides, onChangeOverride, isDuplicate, discrepantMeasurements,
+  s, instance, measures, overrides, onChangeOverride, isDuplicate, discrepantMeasurements,
 }: {
   s: NormalizedSubmission;
   instance: InstanceLite;
+  measures: Record<Measurement, boolean>;
   overrides: OverrideMap;
   onChangeOverride: () => Promise<void>;
   isDuplicate: boolean;
@@ -974,8 +978,10 @@ function SubmissionRow({
   const hasDiscrepancy = !!discrepantMeasurements && discrepantMeasurements.size > 0;
   // Duplicates are the more pressing data issue, so they win the row tint.
   const rowClass = isDuplicate ? 'row-fail' : hasDiscrepancy ? 'row-partial' : '';
-  const cellClass = (m: Measurement) =>
-    discrepantMeasurements?.has(m) && !isDuplicate ? 'cell-discrepancy' : '';
+  const cellClass = (m: Measurement) => {
+    if (!measures[m]) return 'cell-not-tested';
+    return discrepantMeasurements?.has(m) && !isDuplicate ? 'cell-discrepancy' : '';
+  };
   return (
     <tr className={rowClass}>
       <td>{s.round}</td>
@@ -991,6 +997,7 @@ function SubmissionRow({
           isOverridden={'muac_measurement' in ov}
           displayMm={s.muacCm}
           unitHint="cm"
+          disabled={!measures.muac}
           onChange={onChangeOverride}
         />
       </td>
@@ -1001,6 +1008,7 @@ function SubmissionRow({
           isOverridden={'weight' in ov}
           displayMm={s.weightKg}
           unitHint="kg"
+          disabled={!measures.weight}
           onChange={onChangeOverride}
         />
       </td>
@@ -1011,6 +1019,7 @@ function SubmissionRow({
           isOverridden={'hl_measurement' in ov}
           displayMm={s.heightCm}
           unitHint={`cm (${s.direction ?? '?'})`}
+          disabled={!measures.height}
           onChange={onChangeOverride}
         />
       </td>
@@ -1044,7 +1053,7 @@ function SubmissionRow({
 }
 
 function OverrideField({
-  instanceId, uuid, fieldName, original, isOverridden, displayMm, unitHint, onChange,
+  instanceId, uuid, fieldName, original, isOverridden, displayMm, unitHint, disabled, onChange,
 }: {
   instanceId: string;
   uuid: string;
@@ -1053,6 +1062,7 @@ function OverrideField({
   isOverridden: boolean;
   displayMm: number | null;
   unitHint: string;
+  disabled?: boolean;
   onChange: () => Promise<void>;
 }) {
   const [val, setVal] = useState<string>(displayMm == null ? '' : String(displayMm));
@@ -1061,10 +1071,18 @@ function OverrideField({
     <div className="flex items-center gap-1">
       <input
         className={`input w-24 ${isOverridden ? 'override' : ''}`}
-        title={isOverridden && original != null ? `Original value: ${original}` : undefined}
+        title={
+          disabled
+            ? 'This enumerator is not configured for this measurement.'
+            : isOverridden && original != null
+              ? `Original value: ${original}`
+              : undefined
+        }
         value={val}
+        disabled={disabled}
         onChange={(e) => setVal(e.target.value)}
         onBlur={async () => {
+          if (disabled) return;
           if (val === '' || (!isOverridden && val === (displayMm == null ? '' : String(displayMm)))) return;
           await setOverrideAction({
             instanceId,
@@ -1076,8 +1094,8 @@ function OverrideField({
           await onChange();
         }}
       />
-      <span className="text-xs text-[color:var(--muted)]">{unitHint}</span>
-      {isOverridden && (
+      <span className="text-xs text-[color:var(--muted)]">{disabled ? 'not tested' : unitHint}</span>
+      {isOverridden && !disabled && (
         <button
           className="btn"
           onClick={async () => {
