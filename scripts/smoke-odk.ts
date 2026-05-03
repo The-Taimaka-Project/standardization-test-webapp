@@ -33,13 +33,14 @@ async function main() {
   // Pull a recent slice — last 30 days — to see real shape.
   const since = new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10);
   console.log(`Pulling project ${project} form ${form} since ${since}…`);
-  const subs = await fetchSubmissions(
+  const { submissions: subs, rejectedCount } = await fetchSubmissions(
     { baseUrl, email: c.USER, token },
     project,
     form,
     since,
   );
   console.log(`Fetched ${subs.length} submission(s).`);
+  if (rejectedCount > 0) console.log(`Excluded ${rejectedCount} rejected submission(s).`);
   if (subs.length > 0) {
     const sample = subs[0];
     console.log('First submission keys:', Object.keys(sample).slice(0, 30));

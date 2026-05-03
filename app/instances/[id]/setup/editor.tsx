@@ -1,9 +1,12 @@
 'use client';
 
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
 import {
   addGroupAction,
   bulkSetEnumeratorsAction,
+  deleteGroupAction,
   listEnumeratorsAction,
 } from '@/lib/actions/instances';
 
@@ -19,17 +22,36 @@ interface EnumRow {
 export function SetupEditor({
   instanceId,
   groups: initialGroups,
+  initialActiveGroupId,
   supervisorEnumeratorId,
 }: {
   instanceId: string;
   groups: { id: string; groupNumber: number; label: string | null }[];
+  initialActiveGroupId: string | null;
   supervisorEnumeratorId: number;
 }) {
+  const router = useRouter();
   const [groups, setGroups] = useState(initialGroups);
-  const [activeGroupId, setActiveGroupId] = useState(initialGroups[0]?.id ?? null);
+  const [activeGroupId, setActiveGroupId] = useState<string | null>(
+    initialActiveGroupId && initialGroups.some((g) => g.id === initialActiveGroupId)
+      ? initialActiveGroupId
+      : initialGroups[0]?.id ?? null,
+  );
   const [rows, setRows] = useState<EnumRow[]>([]);
   const [pending, startTransition] = useTransition();
+  const [deleting, startDeleteTransition] = useTransition();
   const [savedNote, setSavedNote] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const activeGroup = groups.find((g) => g.id === activeGroupId) ?? null;
+
+  function selectGroup(groupId: string | null) {
+    setActiveGroupId(groupId);
+    if (groupId) {
+      router.replace(`/instances/${instanceId}/setup?group=${groupId}`, { scroll: false });
+    } else {
+      router.replace(`/instances/${instanceId}/setup`, { scroll: false });
+    }
+  }
 
   useEffect(() => {
     if (!activeGroupId) return;
@@ -74,6 +96,7 @@ export function SetupEditor({
 
   function save() {
     if (!activeGroupId) return;
+    setError(null);
     startTransition(async () => {
       await bulkSetEnumeratorsAction(activeGroupId, rows.map((r) => ({
         enumeratorId: r.enumeratorId,
@@ -88,27 +111,77 @@ export function SetupEditor({
   }
 
   async function newGroup() {
+    setError(null);
     const g = await addGroupAction(instanceId);
     setGroups([...groups, { id: g.id, groupNumber: g.groupNumber, label: g.label }]);
-    setActiveGroupId(g.id);
+    selectGroup(g.id);
+  }
+
+  function deleteActiveGroup() {
+    if (!activeGroup) return;
+    if (!window.confirm(`Delete ${activeGroup.label ?? `Group ${activeGroup.groupNumber}`}? This will remove its roster, completion marks, and any local corrections for submissions currently in this group.`)) {
+      return;
+    }
+    setError(null);
+    startDeleteTransition(async () => {
+      const r = await deleteGroupAction(activeGroup.id);
+      if (!r.ok) {
+        setError(r.error);
+        return;
+      }
+      const remaining = groups.filter((g) => g.id !== activeGroup.id);
+      setGroups(remaining);
+      const next =
+        remaining.find((g) => g.groupNumber > activeGroup.groupNumber) ??
+        remaining[remaining.length - 1] ??
+        null;
+      selectGroup(next?.id ?? null);
+      router.refresh();
+    });
   }
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2">
-        {groups.map((g) => (
-          <button
-            key={g.id}
-            onClick={() => setActiveGroupId(g.id)}
-            className={`btn ${g.id === activeGroupId ? 'btn-primary' : ''}`}
-          >
-            {g.label ?? `Group ${g.groupNumber}`}
-          </button>
-        ))}
-        <button className="btn" onClick={newGroup}>+ Add group</button>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          {groups.map((g) => (
+            <button
+              key={g.id}
+              onClick={() => selectGroup(g.id)}
+              className={`btn ${g.id === activeGroupId ? 'btn-primary' : ''}`}
+            >
+              {g.label ?? `Group ${g.groupNumber}`}
+            </button>
+          ))}
+          <button className="btn" onClick={newGroup}>+ Add group</button>
+        </div>
+        <Link
+          href={activeGroupId ? `/instances/${instanceId}?group=${activeGroupId}` : `/instances/${instanceId}`}
+          className="btn btn-primary"
+        >
+          Open instance →
+        </Link>
       </div>
 
       <div className="panel p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <h2 className="font-medium">{activeGroup?.label ?? 'Group setup'}</h2>
+            {activeGroup && (
+              <p className="text-xs text-[color:var(--muted)]">Group number {activeGroup.groupNumber}</p>
+            )}
+          </div>
+          <button
+            className="btn btn-danger"
+            type="button"
+            onClick={deleteActiveGroup}
+            disabled={deleting || groups.length <= 1 || !activeGroup}
+            title={groups.length <= 1 ? 'A test must have at least one group.' : undefined}
+          >
+            {deleting ? 'Deleting…' : 'Delete group'}
+          </button>
+        </div>
+        {error && <div className="chip chip-fail mb-3">{error}</div>}
         <table className="std">
           <thead>
             <tr>

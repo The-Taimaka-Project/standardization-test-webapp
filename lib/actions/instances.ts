@@ -1,11 +1,13 @@
 'use server';
 
 import { z } from 'zod';
-import { eq, and, asc, desc, isNull } from 'drizzle-orm';
+import { eq, and, asc, desc, isNull, inArray } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
 import { db, schema } from '@/lib/db';
+import { normalize } from '@/lib/odk/normalize';
+import { pullSubmissionsForInstanceAction } from './odk';
 
 async function requireUserId(): Promise<string> {
   const s = await auth();
@@ -113,7 +115,56 @@ export async function addGroupAction(instanceId: string, label?: string, groupNu
     })
     .returning();
   revalidatePath(`/instances/${instanceId}`);
+  revalidatePath(`/instances/${instanceId}/setup`);
   return g;
+}
+
+export async function deleteGroupAction(groupId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requireUserId();
+  const group = (await db
+    .select()
+    .from(schema.testGroups)
+    .where(eq(schema.testGroups.id, groupId)))[0];
+  if (!group) return { ok: false, error: 'Group not found.' };
+
+  const groups = await db
+    .select()
+    .from(schema.testGroups)
+    .where(eq(schema.testGroups.instanceId, group.instanceId));
+  if (groups.length <= 1) {
+    return { ok: false, error: 'A test must have at least one group.' };
+  }
+
+  const pull = await pullSubmissionsForInstanceAction(group.instanceId);
+  if (!pull.ok) {
+    return {
+      ok: false,
+      error: `Could not delete group because corrections could not be matched to submissions: ${pull.error}`,
+    };
+  }
+  const groupSubmissionUuids = Array.from(new Set(
+    pull.submissions
+      .map((s) => normalize(s))
+      .filter((s) => s.group === group.groupNumber)
+      .map((s) => s.uuid),
+  ));
+
+  await db.transaction(async (tx) => {
+    if (groupSubmissionUuids.length > 0) {
+      await tx
+        .delete(schema.submissionOverrides)
+        .where(
+          and(
+            eq(schema.submissionOverrides.instanceId, group.instanceId),
+            inArray(schema.submissionOverrides.submissionUuid, groupSubmissionUuids),
+          ),
+        );
+    }
+    await tx.delete(schema.testGroups).where(eq(schema.testGroups.id, groupId));
+  });
+  revalidatePath(`/instances/${group.instanceId}`);
+  revalidatePath(`/instances/${group.instanceId}/setup`);
+  return { ok: true };
 }
 
 export async function listEnumeratorsAction(groupId: string) {

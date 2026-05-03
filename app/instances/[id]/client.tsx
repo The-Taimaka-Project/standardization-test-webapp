@@ -27,8 +27,6 @@ interface EnumLite {
   measuresMuac: boolean; measuresWeight: boolean; measuresHeight: boolean;
 }
 
-const FIELDS_FOR_OVERRIDE = ['muac_measurement', 'weight', 'hl_measurement', 'group'] as const;
-
 const DISCREPANCY_THRESHOLD: Record<Measurement, number> = {
   muac: 0.3, // cm
   weight: 0.2, // kg
@@ -102,6 +100,11 @@ export function InstanceClient({
       if (!c.hasToken) setNeedsOdkLogin(true);
     });
   }, [refresh, activeGroupId]);
+
+  useEffect(() => {
+    setReport((current) => (current?.groupId === activeGroupId ? current : null));
+    setPendingRunEnumerators(null);
+  }, [activeGroupId]);
 
   const activeGroup = groups.find((g) => g.id === activeGroupId)!;
   const normalized = useMemo(
@@ -261,7 +264,7 @@ export function InstanceClient({
         </div>
         <div className="flex items-center gap-2">
           <ThemeToggle />
-          <Link href={`/instances/${instance.id}/setup`} className="btn">Setup</Link>
+          <Link href={`/instances/${instance.id}/setup?group=${activeGroupId}`} className="btn">Setup</Link>
           <button className="btn" onClick={() => setNeedsOdkLogin(true)}>{hasOdkToken ? 'Change ODK login' : 'ODK login'}</button>
           <button className="btn btn-primary" onClick={() => void refresh()} disabled={pulling}>
             {pulling ? 'Refreshing…' : 'Refresh'}
@@ -316,6 +319,9 @@ export function InstanceClient({
                 enumerator={e}
                 instance={instance}
                 groupSubs={groupSubs.filter((s) => s.enumeratorId === e.enumeratorId)}
+                otherGroupSubs={normalized.filter(
+                  (s) => s.enumeratorId === e.enumeratorId && s.group !== activeGroup.groupNumber,
+                )}
                 overrides={overrides}
                 isComplete={completion.has(e.enumeratorId)}
                 onChangeComplete={async (done) => {
@@ -386,9 +392,10 @@ export function InstanceClient({
         </div>
       </div>
 
-      {report && (
+      {report?.groupId === activeGroupId && (
         <ResultsCard
           report={report}
+          instance={instance}
           instanceId={instance.id}
           activeGroupId={activeGroupId}
           enumerators={enumerators}
@@ -523,12 +530,13 @@ function AnomaliesPanel({
 }
 
 function EnumeratorRow({
-  enumerator: e, instance, groupSubs, overrides,
+  enumerator: e, instance, groupSubs, otherGroupSubs, overrides,
   isComplete, onChangeComplete, onChangeOverride, isSupervisor,
 }: {
   enumerator: EnumLite;
   instance: InstanceLite;
   groupSubs: NormalizedSubmission[];
+  otherGroupSubs: NormalizedSubmission[];
   overrides: OverrideMap;
   isComplete: boolean;
   onChangeComplete: (done: boolean) => Promise<void>;
@@ -641,6 +649,8 @@ function EnumeratorRow({
             <SubmissionsDetail
               instance={instance}
               subs={groupSubs}
+              otherGroupSubs={otherGroupSubs}
+              enumeratorId={e.enumeratorId}
               overrides={overrides}
               discrepancies={discrepancies}
               onChangeOverride={onChangeOverride}
@@ -687,10 +697,12 @@ function computeDiscrepancies(r1: NormalizedSubmission[], r2: NormalizedSubmissi
 }
 
 function SubmissionsDetail({
-  instance, subs, overrides, discrepancies, onChangeOverride,
+  instance, subs, otherGroupSubs, enumeratorId, overrides, discrepancies, onChangeOverride,
 }: {
   instance: InstanceLite;
   subs: NormalizedSubmission[];
+  otherGroupSubs: NormalizedSubmission[];
+  enumeratorId: number;
   overrides: OverrideMap;
   discrepancies: { childId: number; measurement: Measurement; v1: number; v2: number; diff: number }[];
   onChangeOverride: () => Promise<void>;
@@ -722,6 +734,12 @@ function SubmissionsDetail({
   }
   return (
     <div className="space-y-3 p-3">
+      <RoundChildSubmissionCounts
+        instance={instance}
+        subs={subs}
+        otherGroupSubs={otherGroupSubs}
+        enumeratorId={enumeratorId}
+      />
       {discrepancies.length > 0 && (
         <div className="space-y-1">
           {discrepancies.map((d, i) => (
@@ -740,6 +758,7 @@ function SubmissionsDetail({
             <th>Weight (kg)</th>
             <th>Height (cm)</th>
             <th>Group</th>
+            <th>Submitted</th>
             <th>Edit / UUID</th>
           </tr>
         </thead>
@@ -759,6 +778,186 @@ function SubmissionsDetail({
       </table>
     </div>
   );
+}
+
+function RoundChildSubmissionCounts({
+  instance,
+  subs,
+  otherGroupSubs,
+  enumeratorId,
+}: {
+  instance: InstanceLite;
+  subs: NormalizedSubmission[];
+  otherGroupSubs: NormalizedSubmission[];
+  enumeratorId: number;
+}) {
+  const [candidateCell, setCandidateCell] = useState<{
+    round: 1 | 2;
+    childId: number;
+    candidates: NormalizedSubmission[];
+  } | null>(null);
+  const children = [1,2,3,4,5,6,7,8,9,10];
+  const countFor = (round: 1 | 2, childId: number) =>
+    subs.filter((s) => s.round === round && s.childId === childId).length;
+  const candidatesFor = (round: 1 | 2, childId: number) =>
+    otherGroupSubs
+      .filter((s) => s.round === round && s.childId === childId)
+      .sort((a, b) => (a.submissionDate ?? '').localeCompare(b.submissionDate ?? ''));
+
+  return (
+    <>
+      <div className="overflow-x-auto">
+        <table className="std submission-count-grid table-fixed min-w-[640px]">
+          <thead>
+            <tr>
+              <th className="w-24">Round</th>
+              {children.map((childId) => (
+                <th key={childId} className="text-center">Child {childId}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {([1, 2] as const).map((round) => (
+              <tr key={round}>
+                <td className="font-medium">Round {round}</td>
+                {children.map((childId) => {
+                  const count = countFor(round, childId);
+                  const candidates = count === 0 ? candidatesFor(round, childId) : [];
+                  return (
+                    <td key={childId} className="text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <span className={submissionCountClass(count)}>{count}</span>
+                        {candidates.length > 0 && (
+                          <button
+                            className="candidate-button"
+                            type="button"
+                            title="Review possible forms in another group"
+                            onClick={() => setCandidateCell({ round, childId, candidates })}
+                          >
+                            review
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {candidateCell && (
+        <CandidateFormsModal
+          instance={instance}
+          enumeratorId={enumeratorId}
+          round={candidateCell.round}
+          childId={candidateCell.childId}
+          candidates={candidateCell.candidates}
+          onClose={() => setCandidateCell(null)}
+        />
+      )}
+    </>
+  );
+}
+
+function CandidateFormsModal({
+  instance,
+  enumeratorId,
+  round,
+  childId,
+  candidates,
+  onClose,
+}: {
+  instance: InstanceLite;
+  enumeratorId: number;
+  round: 1 | 2;
+  childId: number;
+  candidates: NormalizedSubmission[];
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-10">
+      <div className="panel p-6 w-full max-w-2xl space-y-4">
+        <div>
+          <h2 className="text-lg font-medium">Possible forms in another group</h2>
+          <p className="text-sm text-[color:var(--muted)]">
+            Enumerator ID {enumeratorId}, Round {round}, Child {childId}
+          </p>
+        </div>
+        <table className="std">
+          <thead>
+            <tr>
+              <th>Group</th>
+              <th>Submitted</th>
+              <th>UUID</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {candidates.map((candidate) => (
+              <tr key={candidate.uuid}>
+                <td>{candidate.group}</td>
+                <td className="text-xs text-[color:var(--muted)]">
+                  {formatSubmissionTimestamp(candidate.submissionDate)}
+                </td>
+                <td className="font-mono text-xs">{shortUuid(candidate.uuid)}</td>
+                <td className="space-x-2 text-right">
+                  <button
+                    className="btn"
+                    type="button"
+                    onClick={async () => {
+                      const r = await requestEditUrlAction({ instanceId: instance.id, submissionUuid: candidate.uuid });
+                      if (!r.ok) {
+                        alert(r.error);
+                        return;
+                      }
+                      window.open(r.url, '_blank', 'noopener,noreferrer');
+                    }}
+                  >
+                    edit
+                  </button>
+                  <button
+                    className="btn"
+                    type="button"
+                    onClick={() => {
+                      void navigator.clipboard.writeText(candidate.uuid);
+                    }}
+                  >
+                    copy uuid
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="flex justify-end">
+          <button className="btn" type="button" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function submissionCountClass(count: number) {
+  if (count === 1) return 'submission-count-ok';
+  return 'submission-count-bad';
+}
+
+function formatSubmissionTimestamp(value: string | null) {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString([], {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function shortUuid(uuid: string) {
+  return uuid.length > 16 ? `${uuid.slice(0, 8)}…${uuid.slice(-6)}` : uuid;
 }
 
 function SubmissionRow({
@@ -816,14 +1015,10 @@ function SubmissionRow({
         />
       </td>
       <td>
-        <OverrideField
-          instanceId={instance.id} uuid={s.uuid} fieldName="group"
-          original={s.raw.group != null ? String(s.raw.group) : null}
-          isOverridden={'group' in ov}
-          displayMm={s.group}
-          unitHint="grp"
-          onChange={onChangeOverride}
-        />
+        {s.group}
+      </td>
+      <td className="text-xs text-[color:var(--muted)]">
+        {formatSubmissionTimestamp(s.submissionDate)}
       </td>
       <td className="space-x-2 text-xs">
         <button
@@ -896,9 +1091,10 @@ function OverrideField({
 }
 
 function ResultsCard({
-  report, instanceId, activeGroupId, enumerators, onSpawned,
+  report, instance, instanceId, activeGroupId, enumerators, onSpawned,
 }: {
   report: GroupReport;
+  instance: InstanceLite;
   instanceId: string;
   activeGroupId: string;
   enumerators: EnumLite[];
@@ -914,8 +1110,12 @@ function ResultsCard({
   return (
     <div className="panel p-4 space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-medium">Results — {report.label ?? `Group ${report.groupNumber}`}</h2>
+        <div>
+          <h2 className="text-lg font-medium">Results — {report.label ?? `Group ${report.groupNumber}`}</h2>
+          <p className="text-sm text-[color:var(--muted)]">{biasReferenceSummary(report)}</p>
+        </div>
         <div className="flex gap-2">
+          <DownloadResultsButton instance={instance} report={report} />
           <button
             className="btn"
             disabled={failedEnumerators.length === 0}
@@ -995,6 +1195,222 @@ function ResultsCard({
       </table>
     </div>
   );
+}
+
+function DownloadResultsButton({ instance, report }: { instance: InstanceLite; report: GroupReport }) {
+  const [downloading, setDownloading] = useState(false);
+  return (
+    <button
+      className="btn"
+      disabled={downloading}
+      onClick={async () => {
+        setDownloading(true);
+        try {
+          await downloadReportXlsx(instance, report);
+        } finally {
+          setDownloading(false);
+        }
+      }}
+    >
+      {downloading ? 'Preparing…' : 'Download Excel'}
+    </button>
+  );
+}
+
+async function downloadReportXlsx(instance: InstanceLite, groupReport: GroupReport) {
+  const ExcelJS = await import('exceljs');
+  const workbook = new ExcelJS.Workbook();
+  const generatedAt = new Date();
+  workbook.creator = 'Taimaka Standardization Test Webapp';
+  workbook.created = generatedAt;
+  workbook.modified = generatedAt;
+
+  const groupName = groupReport.label ?? `Group ${groupReport.groupNumber}`;
+  const summary = workbook.addWorksheet('Summary');
+  summary.columns = [
+    { key: 'enumeratorId', width: 16 },
+    { key: 'name', width: 24 },
+    { key: 'status', width: 14 },
+    { key: 'tested', width: 28 },
+    { key: 'muac', width: 14 },
+    { key: 'weight', width: 14 },
+    { key: 'height', width: 14 },
+  ];
+  summary.addRows([
+    ['Standardization Test Results'],
+    ['Test', instance.name],
+    ['Group', groupName],
+    ['ODK project', instance.odkProjectId],
+    ['ODK form', instance.odkFormId],
+    ['Pull date', instance.pullFromDate],
+    ['Generated', generatedAt.toLocaleString()],
+    [],
+    ['Enumerator ID', 'Name', 'Status', 'Tested on', 'MUAC', 'Weight', 'Height'],
+  ]);
+  const summaryHeaderRow = summary.getRow(9);
+  summaryHeaderRow.font = { bold: true };
+  summaryHeaderRow.fill = headerFill();
+  for (const e of groupReport.report.enumerators) {
+    summary.addRow([
+      e.enumeratorId,
+      e.displayName ?? (e.isSupervisor ? 'Supervisor' : `Enumerator ${e.enumeratorId}`),
+      e.isSupervisor ? 'supervisor' : e.status,
+      formatMeasurementList(testedMeasurements(e)),
+      summaryMeasurementStatus(e, 'muac'),
+      summaryMeasurementStatus(e, 'weight'),
+      summaryMeasurementStatus(e, 'height'),
+    ]);
+  }
+  summary.getRow(1).font = { bold: true, size: 14 };
+
+  const details = workbook.addWorksheet('Measurement Details');
+  details.columns = [
+    { header: 'Enumerator ID', key: 'enumeratorId', width: 16 },
+    { header: 'Name', key: 'name', width: 24 },
+    { header: 'Role', key: 'role', width: 14 },
+    { header: 'Measurement', key: 'measurement', width: 14 },
+    { header: 'Status', key: 'status', width: 12 },
+    { header: 'N', key: 'n', width: 8 },
+    { header: 'Mean', key: 'mean', width: 12 },
+    { header: 'TEM', key: 'tem', width: 12 },
+    { header: 'TEM class', key: 'temClass', width: 14 },
+    { header: 'TEM %', key: 'temPct', width: 12 },
+    { header: 'R', key: 'r', width: 12 },
+    { header: 'R class', key: 'rClass', width: 12 },
+    { header: 'Bias', key: 'bias', width: 12 },
+    { header: 'Bias reference', key: 'biasReference', width: 18 },
+    { header: 'Bias class', key: 'biasClass', width: 14 },
+  ];
+  details.getRow(1).font = { bold: true };
+  details.getRow(1).fill = headerFill();
+
+  for (const e of groupReport.report.enumerators) {
+    for (const measurement of ['muac', 'weight', 'height'] as Measurement[]) {
+      const r = e.measurements[measurement];
+      details.addRow({
+        enumeratorId: e.enumeratorId,
+        name: e.displayName ?? (e.isSupervisor ? 'Supervisor' : `Enumerator ${e.enumeratorId}`),
+        role: e.isSupervisor ? 'supervisor' : 'trainee',
+        measurement: measurement.toUpperCase(),
+        status: r ? (r.passed ? 'pass' : 'fail') : e.notAssessed.includes(measurement) ? 'not assessed' : 'no data',
+        n: r?.intra.n ?? null,
+        mean: finiteOrNull(r?.intra.mean),
+        tem: finiteOrNull(r?.intra.tem),
+        temClass: r?.temClass ?? null,
+        temPct: finiteOrNull(r?.intra.temPct),
+        r: finiteOrNull(r?.intra.r),
+        rClass: r?.rClass ?? null,
+        bias: finiteOrNull(r?.bias),
+        biasReference: r?.biasReference ?? null,
+        biasClass: r?.biasClass ?? null,
+      });
+    }
+  }
+
+  const supervisor = workbook.addWorksheet('Supervisor TEM');
+  supervisor.columns = [
+    { header: 'Measurement', key: 'measurement', width: 16 },
+    { header: 'N', key: 'n', width: 8 },
+    { header: 'Mean', key: 'mean', width: 12 },
+    { header: 'TEM', key: 'tem', width: 12 },
+    { header: 'TEM %', key: 'temPct', width: 12 },
+    { header: 'R', key: 'r', width: 12 },
+    { header: 'TEM class', key: 'cls', width: 14 },
+  ];
+  supervisor.getRow(1).font = { bold: true };
+  supervisor.getRow(1).fill = headerFill();
+  for (const measurement of ['muac', 'weight', 'height'] as Measurement[]) {
+    const r = groupReport.report.supervisorTem[measurement];
+    supervisor.addRow({
+      measurement: measurement.toUpperCase(),
+      n: r?.intra.n ?? null,
+      mean: finiteOrNull(r?.intra.mean),
+      tem: finiteOrNull(r?.intra.tem),
+      temPct: finiteOrNull(r?.intra.temPct),
+      r: finiteOrNull(r?.intra.r),
+      cls: r?.cls ?? null,
+    });
+  }
+
+  for (const sheet of workbook.worksheets) {
+    sheet.views = [{ state: 'frozen', ySplit: sheet.name === 'Summary' ? 9 : 1 }];
+    sheet.eachRow((row) => {
+      row.eachCell((cell) => {
+        cell.alignment = { vertical: 'middle' };
+      });
+    });
+  }
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer as BlobPart], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${slugify(instance.name)}-${slugify(groupName)}-results.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function finiteOrNull(value: number | null | undefined) {
+  return value == null || !Number.isFinite(value) ? null : value;
+}
+
+function biasReferenceSummary(groupReport: GroupReport) {
+  const parts = (['muac', 'weight', 'height'] as Measurement[])
+    .map((measurement) => {
+      const result = groupReport.report.enumerators
+        .map((e) => e.measurements[measurement])
+        .find((r) => r?.biasReference);
+      if (!result) return null;
+      return `${formatMeasurementName(measurement)}: from ${result.biasReference}`;
+    })
+    .filter(Boolean);
+
+  return parts.length > 0 ? `Bias reference used: ${parts.join(', ')}` : 'Bias reference used: no measurement data';
+}
+
+function testedMeasurements(e: GroupReport['report']['enumerators'][number]): Measurement[] {
+  return (['muac', 'weight', 'height'] as Measurement[]).filter((m) => !e.notAssessed.includes(m));
+}
+
+function summaryMeasurementStatus(
+  e: GroupReport['report']['enumerators'][number],
+  measurement: Measurement,
+) {
+  const r = e.measurements[measurement];
+  if (r) return r.passed ? 'pass' : 'fail';
+  return e.notAssessed.includes(measurement) ? 'not assessed' : 'no data';
+}
+
+function formatMeasurementList(measurements: Measurement[]) {
+  if (measurements.length === 0) return 'None';
+  return measurements.map(formatMeasurementName).join(', ');
+}
+
+function formatMeasurementName(measurement: Measurement) {
+  if (measurement === 'muac') return 'MUAC';
+  return measurement[0].toUpperCase() + measurement.slice(1);
+}
+
+function slugify(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80) || 'standardization-test';
+}
+
+function headerFill() {
+  return {
+    type: 'pattern' as const,
+    pattern: 'solid' as const,
+    fgColor: { argb: 'FFE8EEF7' },
+  };
 }
 
 function ConfirmRunModal({

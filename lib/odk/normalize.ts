@@ -50,7 +50,9 @@ export function normalize(s: OdkSubmission, overrides?: OverrideMap): Normalized
     Object.prototype.hasOwnProperty.call(o, key) ? o[key as string] : (s as Record<string, unknown>)[key as string];
 
   const round = int(get('round'));
-  const group = int(get('group'));
+  // Group assignment is edited in ODK, not via local overrides. This keeps
+  // ODK as the source of truth for which group a submission belongs to.
+  const group = int(s.group);
   const muacCm = num(get('muac_measurement'));
 
   // Prefer the form's calculated `weight`, falling back to compute from the

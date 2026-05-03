@@ -189,7 +189,7 @@ export async function spawnFollowupAction(args: {
         })),
       );
     }
-    return { ok: true, redirectTo: `/instances/${inst.id}` };
+    return { ok: true, redirectTo: `/instances/${inst.id}/setup?group=${g.id}` };
   }
 
   // mode === 'new-test'
@@ -222,5 +222,5 @@ export async function spawnFollowupAction(args: {
       })),
     );
   }
-  return { ok: true, redirectTo: `/instances/${newInst.id}/setup` };
+  return { ok: true, redirectTo: `/instances/${newInst.id}/setup?group=${g.id}` };
 }
