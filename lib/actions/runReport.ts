@@ -118,9 +118,10 @@ function buildPairs(
     (s.round === 1 ? r1 : r2).set(s.childId, s);
   }
   const childIds = Array.from(new Set([...r1.keys(), ...r2.keys()])).sort((a, b) => a - b);
-  const collect = (m: Measurement): { round1: number[]; round2: number[] } | undefined => {
+  const collect = (m: Measurement): { childIds: number[]; round1: number[]; round2: number[] } | undefined => {
     const round1: number[] = [];
     const round2: number[] = [];
+    const pairedChildIds: number[] = [];
     for (const c of childIds) {
       const a = r1.get(c);
       const b = r2.get(c);
@@ -128,10 +129,11 @@ function buildPairs(
       const va = pickValue(a, m);
       const vb = pickValue(b, m);
       if (va == null || vb == null) continue;
+      pairedChildIds.push(c);
       round1.push(va);
       round2.push(vb);
     }
-    return round1.length > 0 ? { round1, round2 } : undefined;
+    return round1.length > 0 ? { childIds: pairedChildIds, round1, round2 } : undefined;
   };
   return {
     muac: measures.muac ? collect('muac') : undefined,

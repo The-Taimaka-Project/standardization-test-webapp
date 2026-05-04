@@ -6,15 +6,15 @@ import {
   passesMeasurement,
 } from '@/lib/ena/thresholds';
 
-describe('classifyTemIntra (SMART Figure 5, exclusive bounds)', () => {
-  it('MUAC: <1.0 good, <1.3 accept, <2.1 poor, ≥2.1 reject', () => {
+describe('classifyTemIntra (SMART Plus suggested cutoffs)', () => {
+  it('MUAC: <2.0 good, <2.7 accept, <3.3 poor, ≥3.3 reject', () => {
     expect(classifyTemIntra(0.5, 'muac')).toBe('good');
-    expect(classifyTemIntra(0.99, 'muac')).toBe('good');
-    expect(classifyTemIntra(1.0, 'muac')).toBe('acceptable');
-    expect(classifyTemIntra(1.29, 'muac')).toBe('acceptable');
-    expect(classifyTemIntra(1.3, 'muac')).toBe('poor');
-    expect(classifyTemIntra(2.09, 'muac')).toBe('poor');
-    expect(classifyTemIntra(2.1, 'muac')).toBe('reject');
+    expect(classifyTemIntra(1.99, 'muac')).toBe('good');
+    expect(classifyTemIntra(2.0, 'muac')).toBe('acceptable');
+    expect(classifyTemIntra(2.69, 'muac')).toBe('acceptable');
+    expect(classifyTemIntra(2.7, 'muac')).toBe('poor');
+    expect(classifyTemIntra(3.29, 'muac')).toBe('poor');
+    expect(classifyTemIntra(3.3, 'muac')).toBe('reject');
   });
   it('Weight: <0.04 good, <0.10 accept, <0.21 poor', () => {
     expect(classifyTemIntra(0.039, 'weight')).toBe('good');
@@ -23,16 +23,17 @@ describe('classifyTemIntra (SMART Figure 5, exclusive bounds)', () => {
     expect(classifyTemIntra(0.10, 'weight')).toBe('poor');
     expect(classifyTemIntra(0.21, 'weight')).toBe('reject');
   });
-  it('Height: <0.4 good, <0.6 accept, <1.2 poor', () => {
+  it('Height: <0.4 good, <0.6 accept, <1.0 poor', () => {
     expect(classifyTemIntra(0.39, 'height')).toBe('good');
     expect(classifyTemIntra(0.4, 'height')).toBe('acceptable');
     expect(classifyTemIntra(0.59, 'height')).toBe('acceptable');
     expect(classifyTemIntra(0.6, 'height')).toBe('poor');
-    expect(classifyTemIntra(1.2, 'height')).toBe('reject');
+    expect(classifyTemIntra(0.99, 'height')).toBe('poor');
+    expect(classifyTemIntra(1.0, 'height')).toBe('reject');
   });
 });
 
-describe('classifyBias (SMART Figure 5)', () => {
+describe('classifyBias (SMART Plus suggested cutoffs)', () => {
   it('MUAC: <1 good, <2 accept, <3 poor, ≥3 reject', () => {
     expect(classifyBias(0.5, 'muac')).toBe('good');
     expect(classifyBias(-0.5, 'muac')).toBe('good');
@@ -48,17 +49,18 @@ describe('classifyBias (SMART Figure 5)', () => {
     expect(classifyBias(0.05, 'weight')).toBe('acceptable');
     expect(classifyBias(0.21, 'weight')).toBe('reject');
   });
-  it('Height uses <0.4 / <0.6 / <1.4', () => {
+  it('Height uses <0.4 / <0.8 / <1.4', () => {
     expect(classifyBias(0.39, 'height')).toBe('good');
-    expect(classifyBias(0.5, 'height')).toBe('acceptable');
+    expect(classifyBias(0.7, 'height')).toBe('acceptable');
     expect(classifyBias(1.4, 'height')).toBe('reject');
   });
 });
 
-describe('classifyR (SMART Figure 5, descending)', () => {
-  it('MUAC: >95 good/acceptable, >90 poor, ≤90 reject', () => {
-    expect(classifyR(99, 'muac')).toBe('good');
-    expect(classifyR(95.1, 'muac')).toBe('good');
+describe('classifyR (SMART Plus suggested cutoffs, descending)', () => {
+  it('MUAC: >99 good, >95 accept, >90 poor', () => {
+    expect(classifyR(99.5, 'muac')).toBe('good');
+    expect(classifyR(99, 'muac')).toBe('acceptable');
+    expect(classifyR(95.1, 'muac')).toBe('acceptable');
     expect(classifyR(95, 'muac')).toBe('poor');
     expect(classifyR(91, 'muac')).toBe('poor');
     expect(classifyR(90, 'muac')).toBe('reject');

@@ -15,6 +15,8 @@ export interface PairedMeasurements {
   /** length === N. round1[i] and round2[i] are the same child. */
   round1: number[];
   round2: number[];
+  /** Optional child/station id for each pair. Falls back to the pair index. */
+  childIds?: number[];
 }
 
 export interface IntraTemResult {
@@ -31,6 +33,9 @@ export interface IntraTemResult {
 export function intraTem(p: PairedMeasurements): IntraTemResult {
   if (p.round1.length !== p.round2.length) {
     throw new Error(`paired arrays differ in length: ${p.round1.length} vs ${p.round2.length}`);
+  }
+  if (p.childIds && p.childIds.length !== p.round1.length) {
+    throw new Error(`child ids differ in length: ${p.childIds.length} vs ${p.round1.length}`);
   }
   const n = p.round1.length;
   if (n === 0) return { n: 0, mean: NaN, sd: NaN, max: NaN, tem: NaN, temPct: NaN, r: NaN };

@@ -8,6 +8,7 @@ import {
   bulkSetEnumeratorsAction,
   deleteGroupAction,
   listEnumeratorsAction,
+  updateGroupAction,
 } from '@/lib/actions/instances';
 
 interface EnumRow {
@@ -19,6 +20,12 @@ interface EnumRow {
   measuresHeight: boolean;
 }
 
+type GroupRow = { id: string; groupNumber: number; label: string | null };
+
+function sortGroups(groups: GroupRow[]) {
+  return [...groups].sort((a, b) => a.groupNumber - b.groupNumber);
+}
+
 export function SetupEditor({
   instanceId,
   groups: initialGroups,
@@ -26,7 +33,7 @@ export function SetupEditor({
   supervisorEnumeratorId,
 }: {
   instanceId: string;
-  groups: { id: string; groupNumber: number; label: string | null }[];
+  groups: GroupRow[];
   initialActiveGroupId: string | null;
   supervisorEnumeratorId: number;
 }) {
@@ -39,9 +46,11 @@ export function SetupEditor({
   );
   const [rows, setRows] = useState<EnumRow[]>([]);
   const [pending, startTransition] = useTransition();
+  const [savingGroup, startGroupTransition] = useTransition();
   const [deleting, startDeleteTransition] = useTransition();
   const [savedNote, setSavedNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [groupNumberDraft, setGroupNumberDraft] = useState('');
   const activeGroup = groups.find((g) => g.id === activeGroupId) ?? null;
 
   function selectGroup(groupId: string | null) {
@@ -81,6 +90,10 @@ export function SetupEditor({
     return () => { cancelled = true; };
   }, [activeGroupId, supervisorEnumeratorId]);
 
+  useEffect(() => {
+    setGroupNumberDraft(activeGroup ? String(activeGroup.groupNumber) : '');
+  }, [activeGroup?.id, activeGroup?.groupNumber]);
+
   function addRow() {
     const maxId = rows.reduce((m, r) => Math.max(m, r.enumeratorId), 0);
     setRows([...rows, { enumeratorId: maxId + 1, displayName: '', measuresMuac: true, measuresWeight: true, measuresHeight: true }]);
@@ -113,8 +126,31 @@ export function SetupEditor({
   async function newGroup() {
     setError(null);
     const g = await addGroupAction(instanceId);
-    setGroups([...groups, { id: g.id, groupNumber: g.groupNumber, label: g.label }]);
+    setGroups(sortGroups([...groups, { id: g.id, groupNumber: g.groupNumber, label: g.label }]));
     selectGroup(g.id);
+  }
+
+  function saveGroupNumber() {
+    if (!activeGroup) return;
+    const groupNumber = Number.parseInt(groupNumberDraft, 10);
+    if (!Number.isInteger(groupNumber) || groupNumber < 1) {
+      setError('Group number must be a positive whole number.');
+      return;
+    }
+    if (groupNumber === activeGroup.groupNumber) return;
+    setError(null);
+    startGroupTransition(async () => {
+      const r = await updateGroupAction({ groupId: activeGroup.id, groupNumber });
+      if (!r.ok) {
+        setError(r.error);
+        setGroupNumberDraft(String(activeGroup.groupNumber));
+        return;
+      }
+      setGroups((prev) => sortGroups(prev.map((g) => (g.id === r.group.id ? r.group : g))));
+      setSavedNote('Group updated.');
+      setTimeout(() => setSavedNote(null), 1500);
+      router.refresh();
+    });
   }
 
   function deleteActiveGroup() {
@@ -168,7 +204,32 @@ export function SetupEditor({
           <div>
             <h2 className="font-medium">{activeGroup?.label ?? 'Group setup'}</h2>
             {activeGroup && (
-              <p className="text-xs text-[color:var(--muted)]">Group number {activeGroup.groupNumber}</p>
+              <div className="mt-2 flex items-end gap-2">
+                <label>
+                  <span className="label">Group number</span>
+                  <input
+                    className="input w-28"
+                    type="number"
+                    min={1}
+                    value={groupNumberDraft}
+                    onChange={(e) => setGroupNumberDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') saveGroupNumber();
+                    }}
+                  />
+                </label>
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={saveGroupNumber}
+                  disabled={
+                    savingGroup ||
+                    Number.parseInt(groupNumberDraft, 10) === activeGroup.groupNumber
+                  }
+                >
+                  {savingGroup ? 'Saving…' : 'Save group number'}
+                </button>
+              </div>
             )}
           </div>
           <button

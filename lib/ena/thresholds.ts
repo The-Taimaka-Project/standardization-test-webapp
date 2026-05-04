@@ -1,19 +1,14 @@
 /**
- * Cut-points for the anthropometric standardization test, taken verbatim from
- * SMART Manual 2.0, Figure 5 ("Suggested cut-points for acceptability of
- * measurements"). Page 23 of the manual.
+ * Cut-points for the anthropometric standardization test. These track the
+ * SMART Plus suggested cut-off table in `reference/smartplus-report.xlsx`.
  *
  * Units: MUAC mm, weight kg, height cm. The pull layer is responsible for
  * converting MUAC from cm (as captured in ODK) to mm before feeding values
  * into this module.
  *
- * Note: the reference ENA output `reference/standardization_test_group3_results.xlsx`
- * uses different cut-points for MUAC TEM (~2× these) and a stricter R cutoff.
- * That spreadsheet's classifications will NOT round-trip through this code.
- * See AGENTS.md for the full discussion.
- *
- * Boundary rule: "<" in the manual is exclusive. e.g. MUAC TEM exactly 1.0 mm
- * is "acceptable" (not "good"), and exactly 2.1 mm is "reject" (not "poor").
+ * Boundary rule: SMART Plus prints the upper bounds as `<`, with reject as
+ * `>=`. e.g. MUAC TEM exactly 2.0 mm is "acceptable" (not "good"), and
+ * exactly 3.3 mm is "reject" (not "poor").
  */
 
 export type Measurement = 'muac' | 'weight' | 'height';
@@ -22,24 +17,23 @@ export type Classification = 'good' | 'acceptable' | 'poor' | 'reject';
 interface AscendingTier { good: number; acceptable: number; poor: number }
 interface DescendingTier { good: number; acceptable: number; poor: number }
 
-// Individual intra-observer TEM cut-points (Figure 5).
+// Individual intra-observer TEM cut-points.
 const TEM_INTRA: Record<Measurement, AscendingTier> = {
-  muac: { good: 1.0, acceptable: 1.3, poor: 2.1 },
+  muac: { good: 2.0, acceptable: 2.7, poor: 3.3 },
   weight: { good: 0.04, acceptable: 0.10, poor: 0.21 },
-  height: { good: 0.4, acceptable: 0.6, poor: 1.2 },
+  height: { good: 0.4, acceptable: 0.6, poor: 1.0 },
 };
 
-// Bias against supervisor (or median fallback) (Figure 5).
+// Bias against supervisor (or median fallback).
 const BIAS: Record<Measurement, AscendingTier> = {
   muac: { good: 1.0, acceptable: 2.0, poor: 3.0 },
   weight: { good: 0.04, acceptable: 0.10, poor: 0.21 },
-  height: { good: 0.4, acceptable: 0.6, poor: 1.4 },
+  height: { good: 0.4, acceptable: 0.8, poor: 1.4 },
 };
 
-// Coefficient of reliability R, percentage 0-100 (Figure 5). Higher is better.
-// MUAC has a different "good" cutoff than weight/height per the manual.
+// Coefficient of reliability R, percentage 0-100. Higher is better.
 const R: Record<Measurement, DescendingTier> = {
-  muac: { good: 95, acceptable: 95, poor: 90 },
+  muac: { good: 99, acceptable: 95, poor: 90 },
   weight: { good: 99, acceptable: 95, poor: 90 },
   height: { good: 99, acceptable: 95, poor: 90 },
 };

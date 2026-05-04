@@ -119,6 +119,53 @@ export async function addGroupAction(instanceId: string, label?: string, groupNu
   return g;
 }
 
+export async function updateGroupAction(args: {
+  groupId: string;
+  groupNumber: number;
+}): Promise<
+  | { ok: true; group: { id: string; groupNumber: number; label: string | null } }
+  | { ok: false; error: string }
+> {
+  await requireUserId();
+  const groupNumber = z.coerce.number().int().positive().parse(args.groupNumber);
+  const group = (await db
+    .select()
+    .from(schema.testGroups)
+    .where(eq(schema.testGroups.id, args.groupId)))[0];
+  if (!group) return { ok: false, error: 'Group not found.' };
+
+  const existing = await db
+    .select()
+    .from(schema.testGroups)
+    .where(eq(schema.testGroups.instanceId, group.instanceId));
+  const conflict = existing.find((g) => g.id !== group.id && g.groupNumber === groupNumber);
+  if (conflict) {
+    return { ok: false, error: `Group ${groupNumber} already exists for this test.` };
+  }
+
+  const [updated] = await db
+    .update(schema.testGroups)
+    .set({
+      groupNumber,
+      label: updateDefaultGroupLabel(group.label, group.groupNumber, groupNumber),
+    })
+    .where(eq(schema.testGroups.id, group.id))
+    .returning();
+  revalidatePath(`/instances/${group.instanceId}`);
+  revalidatePath(`/instances/${group.instanceId}/setup`);
+  return {
+    ok: true,
+    group: { id: updated.id, groupNumber: updated.groupNumber, label: updated.label },
+  };
+}
+
+function updateDefaultGroupLabel(label: string | null, oldNumber: number, newNumber: number): string | null {
+  if (label == null) return null;
+  if (label === `Group ${oldNumber}`) return `Group ${newNumber}`;
+  if (label === `Group ${oldNumber} (retake)`) return `Group ${newNumber} (retake)`;
+  return label;
+}
+
 export async function deleteGroupAction(groupId: string): Promise<{ ok: true } | { ok: false; error: string }> {
   await requireUserId();
   const group = (await db

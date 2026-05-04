@@ -1,28 +1,69 @@
 /**
  * Bias against supervisor and against the group median.
  *
- *   bias_vs_supervisor = mean(enumerator's 20) - mean(supervisor's 20)
- *   bias_vs_median     = mean(enumerator's 20) - median(per-enumerator means
- *                                                       across all enumerators
- *                                                       AND the supervisor)
+ * SMART Plus reports bias as a signed mean difference from the selected
+ * reference. For supervisor bias, this is equivalent to averaging each
+ * child's trainee mean minus supervisor mean:
  *
- * For thresholding the absolute value is what classifies (per Figure 5
- * ranges), but we keep the signed value here so the UI can show direction.
+ *   mean_i(((trainee_r1 + trainee_r2) / 2) - ((supervisor_r1 + supervisor_r2) / 2))
+ *
+ * The classifier applies absolute-value cut-points later; keeping the signed
+ * value here lets the report show whether the enumerator tends to measure
+ * low or high.
  */
 
-export interface PerEnumeratorMean {
-  enumeratorId: number;
-  /** mean of all 2N measurements taken by this enumerator (round 1 + round 2). */
-  mean: number;
+export interface PerChildPair {
+  childId: number;
+  round1: number;
+  round2: number;
 }
 
-export function biasVsSupervisor(enumeratorMean: number, supervisorMean: number): number {
-  return enumeratorMean - supervisorMean;
+export function biasVsSupervisor(
+  enumeratorId: number,
+  enumeratorPairs: PerChildPair[],
+  supervisorId: number,
+  supervisorPairs: PerChildPair[],
+): number {
+  if (enumeratorId === supervisorId) return 0;
+  const supByChild = new Map<number, PerChildPair>();
+  for (const p of supervisorPairs) supByChild.set(p.childId, p);
+
+  let sum = 0;
+  let n = 0;
+  for (const p of enumeratorPairs) {
+    const ref = supByChild.get(p.childId);
+    if (!ref) continue;
+    sum += p.round1 - ref.round1 + p.round2 - ref.round2;
+    n += 2;
+  }
+  return n > 0 ? sum / n : NaN;
 }
 
-export function biasVsMedian(enumeratorMean: number, allMeans: PerEnumeratorMean[]): number {
-  const med = median(allMeans.map((m) => m.mean));
-  return enumeratorMean - med;
+export function biasVsMedian(
+  enumeratorPairs: PerChildPair[],
+  allPairs: PerChildPair[][],
+): number {
+  // Per-child reference: median across all round-1 and round-2 values from
+  // all enumerators and the supervisor. SMART Plus pools both rounds when it
+  // reports the supervisor's median-relative bias.
+  const valuesByChild = new Map<number, number[]>();
+  for (const pairs of allPairs) {
+    for (const p of pairs) {
+      const values = valuesByChild.get(p.childId) ?? [];
+      values.push(p.round1, p.round2);
+      valuesByChild.set(p.childId, values);
+    }
+  }
+
+  let sum = 0;
+  let n = 0;
+  for (const p of enumeratorPairs) {
+    const med = median(valuesByChild.get(p.childId) ?? []);
+    if (!Number.isFinite(med)) continue;
+    sum += p.round1 - med + p.round2 - med;
+    n += 2;
+  }
+  return n > 0 ? sum / n : NaN;
 }
 
 export function median(xs: number[]): number {

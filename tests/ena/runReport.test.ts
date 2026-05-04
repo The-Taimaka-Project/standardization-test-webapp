@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { runReport } from '@/lib/ena/runReport';
 import type { EnumeratorInput } from '@/lib/ena/runReport';
 
-function pair(round1: number[], round2: number[]) {
-  return { round1, round2 };
+function pair(round1: number[], round2: number[], childIds?: number[]) {
+  return { round1, round2, childIds };
 }
 
 describe('runReport', () => {
@@ -41,6 +41,7 @@ describe('runReport', () => {
     // Supervisor TEM should be classified — that drives bias-reference.
     expect(r.supervisorTem.muac).toBeDefined();
     expect(['good', 'acceptable']).toContain(r.supervisorTem.muac!.cls);
+    expect(r.enumerators.find((e) => e.enumeratorId === 0)!.measurements.muac!.biasReference).toBe('median');
 
     // Each trainee should have used bias-vs-supervisor (since sup TEM is acceptable/good).
     const tr1 = r.enumerators.find((e) => e.enumeratorId === 1)!;
@@ -48,6 +49,7 @@ describe('runReport', () => {
 
     // Trainee 1: bias around +1.5 mm → "acceptable" tier (1≤|b|<2).
     expect(tr1.measurements.muac!.biasClass).toBe('acceptable');
+    expect(tr1.measurements.muac!.bias).toBeCloseTo(1.5, 6);
     // Trainee 2: d = +2 - (-2) = 4 each, Σd² = 160, TEM = sqrt(160/20) = 2.83
     // → reject under SMART (≥2.1).
     const tr2 = r.enumerators.find((e) => e.enumeratorId === 2)!;
@@ -79,6 +81,30 @@ describe('runReport', () => {
     expect(r.supervisorTem.muac!.cls).toBe('reject');
     const trRes = r.enumerators.find((e) => e.enumeratorId === 1)!;
     expect(trRes.measurements.muac!.biasReference).toBe('median');
+  });
+
+  it('calculates bias as a signed mean difference, allowing high/low misses to cancel', () => {
+    const childIds = [1, 2];
+    const sup: EnumeratorInput = {
+      enumeratorId: 0,
+      isSupervisor: true,
+      measures: { muac: true, weight: false, height: false },
+      pairs: { muac: pair([100, 200], [100, 200], childIds) },
+    };
+    const tr: EnumeratorInput = {
+      enumeratorId: 1,
+      isSupervisor: false,
+      measures: { muac: true, weight: false, height: false },
+      pairs: { muac: pair([105, 195], [105, 195], childIds) },
+    };
+
+    const r = runReport({ enumerators: [sup, tr] });
+    const trRes = r.enumerators.find((e) => e.enumeratorId === 1)!;
+
+    expect(trRes.measurements.muac!.intra.mean).toBe(150);
+    expect(r.supervisorTem.muac!.intra.mean).toBe(150);
+    expect(trRes.measurements.muac!.bias).toBe(0);
+    expect(trRes.measurements.muac!.biasClass).toBe('good');
   });
 
   it('marks required measurements without data as failed', () => {

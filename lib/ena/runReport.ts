@@ -6,11 +6,11 @@
  * The bias-decision rule (per SMART Manual page 22): if the supervisor's own
  * intra-observer TEM for that measurement is good or acceptable, use bias vs
  * supervisor. Otherwise use bias vs the median of all enumerators' (and
- * supervisor's) means.
+ * supervisor's) measurements for each child.
  */
 
 import { intraTem, type PairedMeasurements, type IntraTemResult } from './tem';
-import { biasVsSupervisor, biasVsMedian } from './bias';
+import { biasVsSupervisor, biasVsMedian, type PerChildPair } from './bias';
 import {
   classifyTemIntra,
   classifyBias,
@@ -41,7 +41,7 @@ export interface MeasurementResult {
   intra: IntraTemResult;
   temClass: Classification;
   rClass: Classification;
-  /** signed enumerator mean - reference mean. */
+  /** SMART Plus-style signed mean difference from the selected reference. */
   bias: number;
   biasReference: 'supervisor' | 'median';
   biasClass: Classification;
@@ -104,15 +104,17 @@ export function runReport(input: ReportInput): Report {
     }
   }
 
-  // 3) Per-measurement: list of all enumerator means (incl. supervisor) for median calc.
-  const meansPerMeas: Partial<Record<Measurement, { enumeratorId: number; mean: number }[]>> = {};
+  // 3) Per-measurement: child-aligned paired values for supervisor/median bias calc.
+  const pairsPerMeas: Partial<Record<Measurement, { enumeratorId: number; pairs: PerChildPair[] }[]>> = {};
   for (const meas of ALL_MEASUREMENTS) {
-    const list: { enumeratorId: number; mean: number }[] = [];
+    const list: { enumeratorId: number; pairs: PerChildPair[] }[] = [];
     for (const e of input.enumerators) {
-      const r = intraByEnum.get(e.enumeratorId)?.[meas];
-      if (r && Number.isFinite(r.mean)) list.push({ enumeratorId: e.enumeratorId, mean: r.mean });
+      const p = e.pairs[meas];
+      if (e.measures[meas] && p && p.round1.length > 0) {
+        list.push({ enumeratorId: e.enumeratorId, pairs: toPerChildPairs(p) });
+      }
     }
-    meansPerMeas[meas] = list;
+    pairsPerMeas[meas] = list;
   }
 
   // 4) Build per-enumerator results, skipping supervisor in the pass/fail roster.
@@ -136,12 +138,22 @@ export function runReport(input: ReportInput): Report {
 
       let bias: number;
       let biasReference: 'supervisor' | 'median';
-      if (useSupervisor && supervisor) {
-        const supMean = intraByEnum.get(supervisor.enumeratorId)?.[meas]?.mean ?? NaN;
-        bias = biasVsSupervisor(r.mean, supMean);
+      if (e.isSupervisor) {
+        const enumPairs =
+          pairsPerMeas[meas]?.find((p) => p.enumeratorId === e.enumeratorId)?.pairs ?? [];
+        bias = biasVsMedian(enumPairs, (pairsPerMeas[meas] ?? []).map((p) => p.pairs));
+        biasReference = 'median';
+      } else if (useSupervisor && supervisor) {
+        const supPairs =
+          pairsPerMeas[meas]?.find((p) => p.enumeratorId === supervisor.enumeratorId)?.pairs ?? [];
+        const enumPairs =
+          pairsPerMeas[meas]?.find((p) => p.enumeratorId === e.enumeratorId)?.pairs ?? [];
+        bias = biasVsSupervisor(e.enumeratorId, enumPairs, supervisor.enumeratorId, supPairs);
         biasReference = 'supervisor';
       } else {
-        bias = biasVsMedian(r.mean, meansPerMeas[meas] ?? []);
+        const enumPairs =
+          pairsPerMeas[meas]?.find((p) => p.enumeratorId === e.enumeratorId)?.pairs ?? [];
+        bias = biasVsMedian(enumPairs, (pairsPerMeas[meas] ?? []).map((p) => p.pairs));
         biasReference = 'median';
       }
       const biasClass = classifyBias(bias, meas);
@@ -202,4 +214,12 @@ export function runReport(input: ReportInput): Report {
   }
 
   return { enumerators: enumeratorResults, supervisorTem };
+}
+
+function toPerChildPairs(pairs: PairedMeasurements): PerChildPair[] {
+  return pairs.round1.map((round1, index) => ({
+    childId: pairs.childIds?.[index] ?? index,
+    round1,
+    round2: pairs.round2[index],
+  }));
 }

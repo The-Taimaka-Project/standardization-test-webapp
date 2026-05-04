@@ -53,6 +53,8 @@ export function InstanceClient({
   const [pullError, setPullError] = useState<string | null>(null);
   // Hoisted so both the inline button and the confirm-and-run modal can call it.
   const runReport = () => {
+    setReport(null);
+    setPullError(null);
     startTransition(async () => {
       const r = await runGroupReportAction({ instanceId: instance.id, groupId: activeGroupId });
       if (!r.ok) {
@@ -293,8 +295,8 @@ export function InstanceClient({
           activeGroupNumber={activeGroup.groupNumber}
           instanceId={instance.id}
           onAddGroup={async (groupNumber) => {
-            await addGroupAction(instance.id, `Group ${groupNumber}`, groupNumber);
-            router.refresh();
+            const group = await addGroupAction(instance.id, `Group ${groupNumber}`, groupNumber);
+            router.push(`/instances/${instance.id}/setup?group=${group.id}`);
           }}
         />
       )}
