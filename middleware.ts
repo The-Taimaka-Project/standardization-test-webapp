@@ -23,7 +23,8 @@ const SESSION_COOKIES = [
 export default function middleware(req: NextRequest) {
   const hasSessionCookie = SESSION_COOKIES.some((c) => req.cookies.get(c));
   if (!hasSessionCookie) {
-    const url = new URL('/login', req.url);
+    const publicOrigin = process.env.NEXTAUTH_URL ?? process.env.AUTH_URL;
+    const url = publicOrigin ? new URL('/login', publicOrigin) : new URL('/login', req.url);
     url.searchParams.set('next', req.nextUrl.pathname + req.nextUrl.search);
     return NextResponse.redirect(url);
   }
